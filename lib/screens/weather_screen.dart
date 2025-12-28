@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:animations/animations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
 
 class WeatherScreen extends StatefulWidget {
@@ -16,38 +17,48 @@ class WeatherScreen extends StatefulWidget {
   State<WeatherScreen> createState() => _WeatherScreenState();
 }
 
-class _WeatherScreenState extends State<WeatherScreen>
-    with SingleTickerProviderStateMixin {
-  final TextEditingController _controller = TextEditingController();
+class _WeatherScreenState extends State<WeatherScreen> {
   final WeatherService _service = WeatherService();
+  final TextEditingController _controller = TextEditingController();
 
   Map<String, dynamic>? weatherData;
   bool loading = false;
   String error = '';
 
-  late AnimationController _animationController;
-
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
+    _loadLastCity();
   }
 
-  void getWeather() async {
-    if (_controller.text.isEmpty) return;
+  // ---------------- SAVE & LOAD CITY ----------------
 
+  Future<void> _saveCity(String city) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_city', city);
+  }
+
+  Future<void> _loadLastCity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final city = prefs.getString('last_city');
+    if (city != null) {
+      _controller.text = city;
+      _getWeatherByCity(city);
+    }
+  }
+
+  // ---------------- FETCH WEATHER ----------------
+
+  Future<void> _getWeatherByCity(String city) async {
     setState(() {
       loading = true;
       error = '';
     });
 
     try {
-      final data = await _service.fetchWeather(_controller.text);
+      final data = await _service.fetchByCity(city);
       setState(() => weatherData = data);
-      _animationController.forward(from: 0);
+      _saveCity(city);
     } catch (e) {
       setState(() => error = 'City not found');
     }
@@ -55,8 +66,28 @@ class _WeatherScreenState extends State<WeatherScreen>
     setState(() => loading = false);
   }
 
-  String iconUrl(String iconCode) =>
-      'https://openweathermap.org/img/wn/$iconCode@2x.png';
+  Future<void> _getWeatherByLocation() async {
+    setState(() {
+      loading = true;
+      error = '';
+    });
+
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final data = await _service.fetchByLatLon(pos.latitude, pos.longitude);
+
+      setState(() => weatherData = data);
+    } catch (e) {
+      setState(() => error = 'Location permission denied');
+    }
+
+    setState(() => loading = false);
+  }
+
+  // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +95,10 @@ class _WeatherScreenState extends State<WeatherScreen>
       appBar: AppBar(
         title: const Text('Weather'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.my_location),
+            onPressed: _getWeatherByLocation,
+          ),
           IconButton(
             icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
             onPressed: widget.toggleTheme,
@@ -81,7 +116,7 @@ class _WeatherScreenState extends State<WeatherScreen>
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.search),
-                  onPressed: getWeather,
+                  onPressed: () => _getWeatherByCity(_controller.text.trim()),
                 ),
               ),
             ),
@@ -92,71 +127,15 @@ class _WeatherScreenState extends State<WeatherScreen>
               Text(error, style: const TextStyle(color: Colors.red)),
 
             if (weatherData != null)
-              FadeTransition(
-                opacity: _animationController,
-                child: Column(
-                  children: [
-                    const SizedBox(height: 20),
-                    Image.network(
-                      iconUrl(weatherData!['current']['weather'][0]['icon']),
-                      width: 100,
-                    ),
-                    Text(
-                      '${weatherData!['current']['temp']} °C',
-                      style: Theme.of(context).textTheme.displaySmall,
-                    ),
-                    Text(
-                      weatherData!['current']['weather'][0]['description'],
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 20),
-
-                    const Text(
-                      '7-Day Forecast',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    SizedBox(
-                      height: 260,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: 7,
-                        itemBuilder: (context, index) {
-                          final day = weatherData!['daily'][index];
-                          return OpenContainer(
-                            closedElevation: 2,
-                            openElevation: 4,
-                            transitionType: ContainerTransitionType.fade,
-                            closedBuilder: (_, __) => Card(
-                              margin: const EdgeInsets.all(8),
-                              child: SizedBox(
-                                width: 140,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Image.network(
-                                      iconUrl(day['weather'][0]['icon']),
-                                      width: 50,
-                                    ),
-                                    Text(
-                                      '${day['temp']['day']} °C',
-                                      style: const TextStyle(fontSize: 18),
-                                    ),
-                                    Text(day['weather'][0]['main']),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            openBuilder: (_, __) => const SizedBox(),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+              Column(
+                children: [
+                  const SizedBox(height: 20),
+                  Text(
+                    '${weatherData!['current']['temp']} °C',
+                    style: Theme.of(context).textTheme.displaySmall,
+                  ),
+                  Text(weatherData!['current']['weather'][0]['description']),
+                ],
               ),
           ],
         ),

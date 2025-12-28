@@ -4,28 +4,47 @@ import 'package:http/http.dart' as http;
 class WeatherService {
   static const String apiKey = 'YOUR_API_KEY';
 
-  Future<Map<String, dynamic>> fetchWeather(String city) async {
+  /// Fetch weather using city name
+  Future<Map<String, dynamic>> fetchByCity(String city) async {
     final geoUrl = Uri.parse(
-      'http://api.openweathermap.org/geo/1.0/direct?q=$city&limit=1&appid=$apiKey',
+      'https://api.openweathermap.org/geo/1.0/direct'
+      '?q=$city&limit=1&appid=$apiKey',
     );
 
     final geoRes = await http.get(geoUrl);
+
+    if (geoRes.statusCode != 200) {
+      throw Exception('Failed to fetch location');
+    }
+
     final geoData = json.decode(geoRes.body);
 
     if (geoData.isEmpty) {
       throw Exception('City not found');
     }
 
-    final lat = geoData[0]['lat'];
-    final lon = geoData[0]['lon'];
+    final double lat = geoData[0]['lat'];
+    final double lon = geoData[0]['lon'];
 
+    return fetchByLatLon(lat, lon);
+  }
+
+  /// Fetch weather using latitude & longitude (GPS)
+  Future<Map<String, dynamic>> fetchByLatLon(double lat, double lon) async {
     final weatherUrl = Uri.parse(
-      'https://api.openweathermap.org/data/2.5/onecall?lat=$lat&lon=$lon&exclude=minutely,hourly,alerts&units=metric&appid=$apiKey',
-      //yha api daalo
+      'https://api.openweathermap.org/data/2.5/onecall'
+      '?lat=$lat&lon=$lon'
+      '&units=metric'
+      '&exclude=minutely,hourly,alerts'
+      '&appid=$apiKey',
     );
 
-    final weatherRes = await http.get(weatherUrl);
+    final res = await http.get(weatherUrl);
 
-    return json.decode(weatherRes.body);
+    if (res.statusCode != 200) {
+      throw Exception('Failed to fetch weather data');
+    }
+
+    return json.decode(res.body);
   }
 }
