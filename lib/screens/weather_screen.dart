@@ -31,7 +31,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     _loadLastCity();
   }
 
-  // ---------------- SAVE & LOAD CITY ----------------
+  // save and load city
 
   Future<void> _saveCity(String city) async {
     final prefs = await SharedPreferences.getInstance();
@@ -47,7 +47,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     }
   }
 
-  // ---------------- FETCH WEATHER ----------------
+  // fetch weather
 
   Future<void> _getWeatherByCity(String city) async {
     setState(() {
@@ -87,7 +87,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     setState(() => loading = false);
   }
 
-  // ---------------- UI ----------------
+  // for UI
 
   @override
   Widget build(BuildContext context) {
