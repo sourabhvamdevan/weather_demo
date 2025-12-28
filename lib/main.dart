@@ -16,9 +16,7 @@ class _MyAppState extends State<MyApp> {
   bool isDark = false;
 
   void toggleTheme() {
-    setState(() {
-      isDark = !isDark;
-    });
+    setState(() => isDark = !isDark);
   }
 
   @override

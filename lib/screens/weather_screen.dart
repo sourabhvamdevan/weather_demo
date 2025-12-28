@@ -1,7 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/weather_service.dart';
+
+const String favCitiesKey = 'favorite_cities';
+const String cachedWeatherKey = 'cached_weather';
 
 class WeatherScreen extends StatefulWidget {
   final bool isDark;
@@ -22,33 +26,60 @@ class _WeatherScreenState extends State<WeatherScreen> {
   final TextEditingController _controller = TextEditingController();
 
   Map<String, dynamic>? weatherData;
+  List<String> favoriteCities = [];
+  bool isFavorite = false;
   bool loading = false;
   String error = '';
 
   @override
   void initState() {
     super.initState();
-    _loadLastCity();
+    _loadFavorites();
+    _loadCachedWeather();
   }
 
-  // save and load city
-
-  Future<void> _saveCity(String city) async {
+  //for favorite cities
+  Future<void> _loadFavorites() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_city', city);
+    setState(() {
+      favoriteCities = prefs.getStringList(favCitiesKey) ?? [];
+    });
   }
 
-  Future<void> _loadLastCity() async {
+  Future<void> _toggleFavorite(String city) async {
     final prefs = await SharedPreferences.getInstance();
-    final city = prefs.getString('last_city');
-    if (city != null) {
-      _controller.text = city;
-      _getWeatherByCity(city);
+
+    setState(() {
+      if (favoriteCities.contains(city)) {
+        favoriteCities.remove(city);
+        isFavorite = false;
+      } else {
+        favoriteCities.add(city);
+        isFavorite = true;
+      }
+    });
+
+    await prefs.setStringList(favCitiesKey, favoriteCities);
+  }
+
+  //this is for caching
+  Future<void> _cacheWeather(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(cachedWeatherKey, json.encode(data));
+  }
+
+  Future<void> _loadCachedWeather() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(cachedWeatherKey);
+
+    if (cached != null && weatherData == null) {
+      setState(() {
+        weatherData = json.decode(cached);
+      });
     }
   }
 
-  // fetch weather
-
+  //this is for weather fetching
   Future<void> _getWeatherByCity(String city) async {
     setState(() {
       loading = true;
@@ -57,10 +88,14 @@ class _WeatherScreenState extends State<WeatherScreen> {
 
     try {
       final data = await _service.fetchByCity(city);
-      setState(() => weatherData = data);
-      _saveCity(city);
+      setState(() {
+        weatherData = data;
+        isFavorite = favoriteCities.contains(city);
+      });
+      _cacheWeather(data);
     } catch (e) {
-      setState(() => error = 'City not found');
+      error = 'Offline mode – showing last data';
+      _loadCachedWeather();
     }
 
     setState(() => loading = false);
@@ -76,19 +111,19 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-
       final data = await _service.fetchByLatLon(pos.latitude, pos.longitude);
 
       setState(() => weatherData = data);
+      _cacheWeather(data);
     } catch (e) {
-      setState(() => error = 'Location permission denied');
+      error = 'Location error or offline';
+      _loadCachedWeather();
     }
 
     setState(() => loading = false);
   }
 
-  // for UI
-
+  //for UI section
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -98,6 +133,17 @@ class _WeatherScreenState extends State<WeatherScreen> {
           IconButton(
             icon: const Icon(Icons.my_location),
             onPressed: _getWeatherByLocation,
+          ),
+          IconButton(
+            icon: Icon(
+              isFavorite ? Icons.star : Icons.star_border,
+              color: Colors.amber,
+            ),
+            onPressed: () {
+              if (_controller.text.isNotEmpty) {
+                _toggleFavorite(_controller.text.trim());
+              }
+            },
           ),
           IconButton(
             icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
@@ -120,6 +166,22 @@ class _WeatherScreenState extends State<WeatherScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+
+            if (favoriteCities.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                children: favoriteCities.map((city) {
+                  return ActionChip(
+                    label: Text(city),
+                    onPressed: () {
+                      _controller.text = city;
+                      _getWeatherByCity(city);
+                    },
+                  );
+                }).toList(),
+              ),
+
             const SizedBox(height: 20),
 
             if (loading) const CircularProgressIndicator(),
